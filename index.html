@@ -1,48 +1,399 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Transport Dashboard</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #0f172a;
-            color: white;
-            padding: 20px;
-        }
 
-        .card {
-            background: #1e293b;
-            padding: 20px;
-            margin: 10px 0;
-            border-radius: 10px;
-        }
+(() => {
 
-        h1 {
-            color: #38bdf8;
-        }
-    </style>
-</head>
-<body>
-    <h1>🚆 Customer Journeys Dashboard</h1>
+const today = new Date().toLocaleDateString("en-CA");
+const url = new URL(window.location.href);
+if (url.searchParams.get("serviceDate") !== today) {
+  url.searchParams.set("serviceDate", today);
+  window.location.replace(url.toString());
+  return;
+}
 
-    <div class="card">
-        <h2>Metro</h2>
-        <p>Performance: 100%</p>
-    </div>
 
-    <div class="card">
-        <h2>Trains</h2>
-        <p>Performance: 95%</p>
-    </div>
+  
+const REFRESH_SECONDS = 15;
+  const SHOW_THRESHOLD = 95;
+  if (window.wallboardShowAll === undefined) {
+    window.wallboardShowAll = false;
+  }
+window.wallboardHistory ??= {};
 
-    <div class="card">
-        <h2>Buses</h2>
-        <p>Performance: 96%</p>
-    </div>
+  const operatorNames = {
+    "BLUE-MOUNTAINS-TRANSIT": "Blue Mountains Transit",
+    "BUSWAYS-NORTH-WEST": "Busways NW",
+    "BUSWAYS-OMR6": "Busways OMR6",
+    "BUSWAYS-R1": "Busways R1",
+    "CDC-NSW-R4": "CDC R4",
+    "CDC-NSW-R14": "CDC R14",
+    "COASTAL-LINER": "Coastal Liner",
+    "DIONS-BUS-SERVICE": "Dions",
+    "HUNTER-VALLEY-BUSES": "Hunter Valley",
+    "KEOLIS-DOWNER-NORTHERN-BEACHES": "KD Northern Beaches",
+    "NEWCASTLE-TRANSPORT": "Newcastle Transport",
+    "PORT-STEPHENS-COACHES": "Port Stephens",
+    "PREMIER-CHARTERS": "Premier Charters",
+    "PREMIER-ILLAWARRA": "Premier Illawarra",
+    "REDBUS-CDC-NSW": "Red Bus",
+    "ROVER-COACHES": "Rover",
+    "TRANSDEV-JOHN-HOLLAND-BUSES": "Transdev",
+    "TRANSIT-SYSTEMS": "Transit Systems",
+    "TRANSIT-SYSTEMS-NSW": "Transit NSW",
+    "TRANSIT-SYSTEMS-NSW-SW": "Transit SW",
+    "U-GO-MOBILITY": "U-Go Mobility"
+  };
+  const modeBranches = {
+    M: ["M1"],
+    T: [
+      "T1","T2","T3","T4",
+      "T5","T7","T8","T9",
+      "BMT","CCN","HUN","SCO"
+    ],
+    B: Object.keys(operatorNames),
+    F: [
+      "F1","F2","F3","F4",
+      "F5","F6","F7","F8","F9"
+    ],
+    L: ["L1","L2","L3"]
+  };
+  const modes = [
+    ["M", "Metro", "directions_subway", "#148E9A"],
+    ["T", "Trains", "train", "#F57C00"],
+    ["B", "Buses", "directions_bus", "#1976D2"],
+    ["F", "Ferries", "directions_boat", "#388E3C"],
+    ["L", "Light Rail", "tram", "#D32F2F"]
+  ];
+  function refreshDashboardText() {
+    const overlay = document.getElementById("tfns-wallboard");
+    if (overlay) overlay.style.display = "none";
+    window.originalDashboardText =
+      document.body.innerText || "";
+    if (overlay) overlay.style.display = "";
+  }
+  function getPct(pattern) {
+    const text = window.originalDashboardText || "";
+    const escaped = pattern.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&"
+    );
+    const match = text.match(
+      new RegExp(
+        `${escaped}\\s+(\\d+(?:\\.\\d+)?)%`,
+        "i"
+      )
+    );
+    return match ? parseFloat(match[1]) : null;
+  }
+  function getColour(value) {
+    if (value < 85) return "#B71C1C";
+    if (value < 90) return "#D84315";
+    if (value < 95) return "#F57C00";
+    return "#2E7D32";
+  }
+  function ensureOverlay() {
+    let overlay =
+      document.getElementById("tfns-wallboard");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "tfns-wallboard";
+      Object.assign(overlay.style, {
+        position: "fixed",
+        inset: "0",
+        background: "#000",
+        color: "#fff",
+        zIndex: "999999",
+        padding: "20px",
+        boxSizing: "border-box",
+        fontFamily: "Segoe UI, Arial, sans-serif",
+        overflow: "auto"
+      });
+      document.body.appendChild(overlay);
+    }
 
-    <div class="card">
-        <h2>Ferries</h2>
-        <p>Performance: 99%</p>
-    </div>
-</body>
-</html>
+if (!document.getElementById("wallboard-flash-style")) {
+  const style = document.createElement("style");
+  style.id = "wallboard-flash-style";
+
+style.textContent = `
+
+@keyframes criticalFlash {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+  @keyframes liveBlink {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.2; }
+  }
+`;
+
+  document.head.appendChild(style);
+}
+
+    return overlay;
+
+  }
+  function renderWallboard() {
+    refreshDashboardText();
+    const overlay = ensureOverlay();
+    overlay.innerHTML = "";
+   
+
+const headerBox = document.createElement("div");
+Object.assign(headerBox.style, {
+  position: "fixed",
+  top: "20px",
+  right: "20px",
+  textAlign: "right",
+  zIndex: "999999"
+});
+const clock = document.createElement("div");
+Object.assign(clock.style, {
+  fontSize: "42px",
+  fontWeight: "700",
+  color: "#fff"
+});
+
+const live = document.createElement("div");
+Object.assign(live.style, {
+  fontSize: "24px",
+  fontWeight: "700",
+  color: "#00FF00",
+  marginTop: "6px",
+  animation: "liveBlink 3s infinite"
+});
+live.textContent = "● LIVE";
+
+
+headerBox.appendChild(clock);
+headerBox.appendChild(live);
+overlay.appendChild(headerBox);
+
+
+
+    const toggle = document.createElement("label");
+    Object.assign(toggle.style, {
+      position: "fixed",
+      top: "20px",
+      left: "20px",
+      zIndex: "999999",
+      background:
+        window.wallboardShowAll
+          ? "#2E7D32"
+          : "#F57C00",
+      padding: "10px 16px",
+      borderRadius: "10px",
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
+      fontWeight: "700",
+      cursor: "pointer"
+    });
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = window.wallboardShowAll;
+    input.onchange = () => {
+      window.wallboardShowAll = input.checked;
+      renderWallboard();
+    };
+    toggle.appendChild(input);
+    toggle.append("Show All Operators & Branches");
+    overlay.appendChild(toggle);
+    const panel = document.createElement("div");
+   
+
+Object.assign(panel.style, {
+  display: "grid",
+  gridTemplateColumns: "repeat(5,1fr)",
+  gap: "20px",
+  marginTop: "100px",
+  alignItems: "start"
+});
+
+    modes.forEach(([code, label, icon, colour]) => {
+      const column = document.createElement("div");
+      Object.assign(column.style, {
+        display: "flex",
+        flexDirection: "column",
+        gap: "10px"
+      });
+      
+
+const rawValue = getPct(code);
+const value = rawValue !== null
+  ? Math.round(rawValue)
+  : null;
+
+
+      const card = document.createElement("div");
+      Object.assign(card.style, {
+        background: colour,
+        borderRadius: "24px",
+        height: "350px",
+        position: "relative",
+        boxShadow: "0 8px 20px rgba(0,0,0,.4)"
+      });
+    
+
+card.innerHTML = `
+<div style="
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  height:100%;
+">
+  <div style="
+    width:80px;
+    height:80px;
+    border-radius:50%;
+    background:white;
+    color:${colour};
+    font-size:52px;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border:4px solid rgba(255,255,255,.4);
+  ">
+    ${code}
+  </div>
+  <div style="
+    margin-top:15px;
+    font-size:36px;
+    font-weight:700;
+  ">
+    ${label}
+  </div>
+  <div style="
+    margin-top:15px;
+    font-size:90px;
+    font-weight:700;
+    line-height:1;
+  ">
+    ${value ?? "--"}%
+  </div>
+</div>
+`;
+
+      column.appendChild(card);
+      const branchPanel =
+        document.createElement("div");
+
+     
+
+Object.assign(branchPanel.style, {
+  display: "grid",
+  gridTemplateColumns: "1fr",
+  gap: "6px"
+});
+
+      
+
+const branchData = [];
+(modeBranches[code] || []).forEach(branch => {
+  const pct = getPct(branch);
+  if (pct === null) return;
+  branchData.push({
+    branch,
+    pct
+  });
+});
+branchData.sort((a, b) => a.pct - b.pct);
+branchData.forEach(({ branch, pct }) => {
+  if (
+    !window.wallboardShowAll &&
+    pct >= SHOW_THRESHOLD
+  ) {
+    return;
+  }
+  const displayName =
+    code === "B"
+      ? operatorNames[branch]
+      : branch;
+  const tile = document.createElement("div");
+  Object.assign(tile.style, {
+    background: getColour(pct),
+    borderRadius: "8px",
+    padding: "6px",
+    textAlign: "center",
+    color: "#fff"
+  });
+  if (pct < 85) {
+    tile.style.border = "3px solid #FFD600";
+ 
+tile.style.animation = "criticalFlash 3s ease-in-out infinite";
+  }
+  
+
+
+tile.innerHTML = `
+  <div style="
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:8px;
+    font-weight:700;
+  ">
+    <span style="
+      font-size:12px;
+      text-align:left;
+      flex:1;
+    ">
+      ${displayName}
+    </span>
+    <span style="
+      font-size:16px;
+      white-space:nowrap;
+    ">
+      ${pct.toFixed(1)}%
+    </span>
+  </div>
+`;
+
+  branchPanel.appendChild(tile);
+});
+
+      column.appendChild(branchPanel);
+      panel.appendChild(column);
+    });
+    overlay.appendChild(panel);
+    
+
+
+function updateClock() {
+  clock.textContent = new Date().toLocaleTimeString("en-AU", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+}
+
+updateClock();
+clearInterval(window.wallboardClock);
+window.wallboardClock = setInterval(() => {
+  updateClock();
+}, 1000);
+
+  }
+ 
+
+if (!document.getElementById("material-icons-link")) {
+  const link = document.createElement("link");
+  link.id = "material-icons-link";
+  link.rel = "stylesheet";
+  link.href =
+    "https://fonts.googleapis.com/icon?family=Material+Icons";
+  document.head.appendChild(link);
+}
+renderWallboard();
+
+if (!document.getElementById("material-icons-link")) {
+  const link = document.createElement("link");
+  link.id = "material-icons-link";
+  link.rel = "stylesheet";
+  link.href =
+    "https://fonts.googleapis.com/icon?family=Material+Icons";
+  document.head.appendChild(link);
+}
+renderWallboard();
+})();
